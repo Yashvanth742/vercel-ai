@@ -571,6 +571,18 @@ export abstract class AbstractChat<UI_MESSAGE extends UIMessage> {
             part.approval.id === id,
         ),
       );
+      const hasPendingApproval =
+        messageIndex !== -1 ||
+        this.activeResponse?.state.message.parts.some(
+          part =>
+            isToolUIPart(part) &&
+            part.state === 'approval-requested' &&
+            part.approval.id === id,
+        ) === true;
+
+      if (!hasPendingApproval) {
+        return;
+      }
 
       if (messageIndex !== -1) {
         const message = messages[messageIndex];

@@ -3845,6 +3845,74 @@ describe('Chat', () => {
   });
 
   describe('addToolApprovalResponse', () => {
+    it('should ignore repeated approval responses while an async auto-send predicate is pending', async () => {
+      let sendCount = 0;
+      const onFinishPromise = createResolvablePromise<void>();
+
+      const chat = new TestChat({
+        id: '123',
+        messages: [
+          {
+            id: 'id-1',
+            role: 'assistant',
+            parts: [
+              {
+                type: 'tool-weather',
+                toolCallId: 'call-1',
+                state: 'approval-requested',
+                input: { city: 'Tokyo' },
+                approval: { id: 'approval-1' },
+              },
+            ],
+          },
+        ],
+        sendAutomaticallyWhen: async ({ messages }) => {
+          await Promise.resolve();
+          return lastAssistantMessageIsCompleteWithApprovalResponses({
+            messages,
+          });
+        },
+        onFinish: () => {
+          onFinishPromise.resolve();
+        },
+        transport: {
+          async sendMessages() {
+            sendCount++;
+            return new ReadableStream<UIMessageChunk>({
+              start(controller) {
+                controller.enqueue({
+                  type: 'start',
+                  messageId: 'response-1',
+                });
+                controller.enqueue({
+                  type: 'finish',
+                  finishReason: 'stop',
+                });
+                controller.close();
+              },
+            });
+          },
+          async reconnectToStream() {
+            return null;
+          },
+        },
+      });
+
+      await Promise.all([
+        chat.addToolApprovalResponse({
+          id: 'approval-1',
+          approved: true,
+        }),
+        chat.addToolApprovalResponse({
+          id: 'approval-1',
+          approved: true,
+        }),
+      ]);
+      await onFinishPromise.promise;
+
+      expect(sendCount).toBe(1);
+    });
+
     it.each([true, false])(
       'should update an earlier approval response when approved is %s',
       async approved => {
